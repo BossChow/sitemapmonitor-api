@@ -1,0 +1,39 @@
+services:
+  web:
+    image: ghcr.io/bosschow/sitemap-monitor-api:latest
+    environment:
+      - SERVICE_TYPE=web
+      - HOST=0.0.0.0
+      - PORT=8000
+    env_file: .env
+    restart: unless-stopped
+    ports:
+      - "5010:8000"
+    networks:
+      - infra
+    depends_on:
+      - worker
+
+  worker:
+    image: ghcr.io/bosschow/sitemap-monitor-api:latest
+    environment:
+      - SERVICE_TYPE=worker
+    env_file: .env
+    restart: unless-stopped
+    networks:
+      - infra
+
+  beat:
+    image: ghcr.io/bosschow/sitemap-monitor-api:latest
+    environment:
+      - SERVICE_TYPE=beat
+    env_file: .env
+    restart: unless-stopped
+    networks:
+      - infra
+    depends_on:
+      - worker
+
+networks:
+  infra:
+    external: true
