@@ -1,84 +1,24 @@
-# Frontend API Guide
+# 前端接口文档
 
-This document describes the minimum API flow the frontend needs for the Sitemap Monitor MVP.
+## 通用请求头
 
-## Base URL
-
-Local development:
+除 `GET /health` 外，接口都需要：
 
 ```text
-http://127.0.0.1:8000
+X-Owner-User-Id: <user_id>
 ```
 
-VPS Docker deployment:
-
-```text
-http://YOUR_VPS_IP:5010
-```
-
-## Authentication Header
-
-Most APIs require an external user id header:
-
-```text
-X-Owner-User-Id: <current-user-id>
-```
-
-The backend does not manage users. The frontend or upstream auth service should provide this value.
-
-For local testing, use:
+本地测试可使用：
 
 ```text
 X-Owner-User-Id: test-user
 ```
 
-`GET /health` is the only MVP endpoint that does not require this header.
+所有 `id`、`site_id`、`check_id`、`url_id` 都是 UUID 字符串。
 
-## Recommended Call Flow
+## 枚举值
 
-### 1. Health Check
-
-Use this to confirm the API is reachable.
-
-```http
-GET /health
-```
-
-Response:
-
-```json
-{
-  "status": "ok"
-}
-```
-
-### 2. Create Site
-
-Create a monitored site before triggering checks.
-
-```http
-POST /sites
-```
-
-Headers:
-
-```text
-Content-Type: application/json
-X-Owner-User-Id: test-user
-```
-
-Body:
-
-```json
-{
-  "name": "Example",
-  "root_url": "https://example.com",
-  "sitemap_url": "https://example.com/sitemap.xml",
-  "check_frequency": "daily"
-}
-```
-
-Supported `check_frequency` values:
+`check_frequency`：
 
 ```text
 six_hours
@@ -87,167 +27,16 @@ daily
 weekly
 ```
 
-Response contains the site `id`. Save it as `site_id`.
-
-### 3. List Sites
-
-Use this for the dashboard site list.
-
-```http
-GET /sites?limit=50&offset=0
-```
-
-Headers:
+`status`：
 
 ```text
-X-Owner-User-Id: test-user
-```
-
-### 4. Get Site Detail
-
-Use this for a site detail page.
-
-```http
-GET /sites/{site_id}
-```
-
-Headers:
-
-```text
-X-Owner-User-Id: test-user
-```
-
-### 5. Update Site
-
-Use this for editing name, sitemap URL, status, or frequency.
-
-```http
-PATCH /sites/{site_id}
-```
-
-Body example:
-
-```json
-{
-  "name": "Example Blog",
-  "check_frequency": "twelve_hours",
-  "status": "active"
-}
-```
-
-Supported `status` values:
-
-```text
+initializing
 active
 paused
-```
-
-### 6. Trigger Manual Check
-
-This creates an async Celery task. The response only means the task was queued.
-
-```http
-POST /sites/{site_id}/checks
-```
-
-Response:
-
-```json
-{
-  "task_id": "celery-task-id"
-}
-```
-
-Frontend behavior:
-
-1. Show a checking state.
-2. Poll `GET /sites/{site_id}/checks`.
-3. Stop polling when the latest check is `completed` or `failed`.
-
-### 7. Poll Check History
-
-```http
-GET /sites/{site_id}/checks?limit=20&offset=0
-```
-
-Important fields:
-
-```text
-id
-status
-started_at
-finished_at
-url_count
-added_count
-removed_count
-updated_count
-error_message
-```
-
-Possible `status` values:
-
-```text
-running
-completed
 failed
 ```
 
-Recommended polling interval after manual trigger:
-
-```text
-2-5 seconds
-```
-
-### 8. Get Check Detail
-
-Use this if the frontend has a `check_id`.
-
-```http
-GET /checks/{check_id}
-```
-
-### 9. List URLs
-
-Use this to display all known URLs for a site.
-
-```http
-GET /sites/{site_id}/urls?include_removed=false&limit=100&offset=0
-```
-
-Set `include_removed=true` if the UI needs to show removed URLs.
-
-Important fields:
-
-```text
-url
-lastmod
-first_seen_at
-last_seen_at
-removed_at
-```
-
-If `removed_at` is not null, the URL is currently considered removed from the sitemap.
-
-### 10. List Changes
-
-Use this for the main changes feed.
-
-```http
-GET /sites/{site_id}/changes?limit=50&offset=0
-```
-
-Important fields:
-
-```text
-change_type
-url
-old_lastmod
-new_lastmod
-created_at
-check_id
-```
-
-Supported `change_type` values:
+`change_type` / `tracked_change_types`：
 
 ```text
 added
@@ -255,139 +44,291 @@ removed
 updated
 ```
 
-## Common UI States
-
-### Site List Page
-
-Call:
+`check.status`：
 
 ```text
-GET /sites
+queued
+running
+completed
+failed
+skipped
 ```
 
-Display:
+## GET /health
 
-```text
-name
-root_url
-sitemap_url
-status
-check_frequency
-last_checked_at
-next_check_at
-```
+入参：无
 
-### Site Detail Page
+出参：
 
-Recommended initial calls:
-
-```text
-GET /sites/{site_id}
-GET /sites/{site_id}/checks?limit=10
-GET /sites/{site_id}/changes?limit=50
-GET /sites/{site_id}/urls?limit=100
-```
-
-### Manual Check Button
-
-On click:
-
-```text
-POST /sites/{site_id}/checks
-```
-
-Then poll:
-
-```text
-GET /sites/{site_id}/checks?limit=1
-```
-
-When latest check becomes `completed`, refresh:
-
-```text
-GET /sites/{site_id}
-GET /sites/{site_id}/changes
-GET /sites/{site_id}/urls
-```
-
-When latest check becomes `failed`, show `error_message`.
-
-## Error Handling
-
-Typical status codes:
-
-```text
-401: Missing X-Owner-User-Id
-404: Site or check not found
-422: Invalid request body or query parameter
-500: Server error
-```
-
-For `401`, make sure the frontend sends:
-
-```text
-X-Owner-User-Id
-```
-
-For `422`, check URL format and enum values.
-
-## Example Fetch Wrapper
-
-```ts
-const API_BASE_URL = 'http://127.0.0.1:8000'
-
-async function apiFetch<T>(
-  path: string,
-  options: RequestInit = {},
-): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Owner-User-Id': 'test-user',
-      ...options.headers,
-    },
-  })
-
-  if (!response.ok) {
-    const error = await response.text()
-    throw new Error(error)
-  }
-
-  return response.json() as Promise<T>
+```json
+{
+  "status": "ok"
 }
 ```
 
-## Example Manual Check Flow
+## POST /sites
 
-```ts
-async function triggerAndPollCheck(siteId: number) {
-  await apiFetch<{ task_id: string }>(`/sites/${siteId}/checks`, {
-    method: 'POST',
-  })
+入参 Body：
 
-  for (let attempt = 0; attempt < 30; attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 3000))
-
-    const checks = await apiFetch<Array<{ status: string; error_message?: string | null }>>(
-      `/sites/${siteId}/checks?limit=1`,
-    )
-
-    const latestCheck = checks[0]
-    if (!latestCheck) {
-      continue
-    }
-
-    if (latestCheck.status === 'completed') {
-      return latestCheck
-    }
-
-    if (latestCheck.status === 'failed') {
-      throw new Error(latestCheck.error_message || 'Sitemap check failed')
-    }
-  }
-
-  throw new Error('Sitemap check timed out')
+```json
+{
+  "root_url": "https://example.com",
+  "check_frequency": "daily",
+  "tracked_change_types": ["added", "removed", "updated"],
+  "name": "Example",
+  "sitemap_url": "https://example.com/sitemap.xml"
 }
 ```
 
+出参：
+
+```json
+{
+  "id": "uuid",
+  "owner_user_id": "test-user",
+  "name": "Example",
+  "root_url": "https://example.com",
+  "sitemap_url": null,
+  "status": "initializing",
+  "check_frequency": "daily",
+  "tracked_change_types": ["added", "removed", "updated"],
+  "baseline_started_at": null,
+  "baseline_completed_at": null,
+  "baseline_error_message": null,
+  "error_message": null,
+  "last_checked_at": null,
+  "checking_started_at": null,
+  "next_check_at": null,
+  "created_at": "2026-07-15T00:00:00Z",
+  "updated_at": "2026-07-15T00:00:00Z"
+}
+```
+
+## GET /sites
+
+入参 Query：
+
+```text
+limit: number，可选，默认 50，范围 1-200
+offset: number，可选，默认 0，最小 0
+```
+
+出参：
+
+```json
+[
+  {
+    "id": "uuid",
+    "owner_user_id": "test-user",
+    "name": "Example",
+    "root_url": "https://example.com",
+    "sitemap_url": "https://example.com/sitemap.xml",
+    "status": "active",
+    "check_frequency": "daily",
+    "tracked_change_types": ["added", "removed", "updated"],
+    "baseline_started_at": "2026-07-15T00:00:00Z",
+    "baseline_completed_at": "2026-07-15T00:00:00Z",
+    "baseline_error_message": null,
+    "error_message": null,
+    "last_checked_at": null,
+    "checking_started_at": null,
+    "next_check_at": "2026-07-16T00:00:00Z",
+    "created_at": "2026-07-15T00:00:00Z",
+    "updated_at": "2026-07-15T00:00:00Z"
+  }
+]
+```
+
+## GET /sites/{site_id}
+
+入参 Path：
+
+```text
+site_id: string
+```
+
+出参：同 `POST /sites`
+
+## PATCH /sites/{site_id}
+
+入参 Path：
+
+```text
+site_id: string
+```
+
+入参 Body，字段均可选：
+
+```json
+{
+  "name": "Example Blog",
+  "root_url": "https://example.com",
+  "sitemap_url": "https://example.com/sitemap.xml",
+  "status": "active",
+  "check_frequency": "twelve_hours",
+  "tracked_change_types": ["added"]
+}
+```
+
+出参：同 `POST /sites`
+
+## DELETE /sites/{site_id}
+
+入参 Path：
+
+```text
+site_id: string
+```
+
+出参：
+
+```json
+{
+  "message": "Site deleted"
+}
+```
+
+## POST /sites/{site_id}/checks
+
+入参 Path：
+
+```text
+site_id: string
+```
+
+出参：
+
+```json
+{
+  "task_id": "celery-task-id"
+}
+```
+
+## GET /sites/{site_id}/checks
+
+入参 Path：
+
+```text
+site_id: string
+```
+
+入参 Query：
+
+```text
+change_type: string，可选，added | removed | updated
+limit: number，可选，默认 50，范围 1-200
+offset: number，可选，默认 0，最小 0
+```
+
+出参：
+
+```json
+[
+  {
+    "id": "uuid",
+    "site_id": "uuid",
+    "status": "completed",
+    "started_at": "2026-07-15T00:00:00Z",
+    "finished_at": "2026-07-15T00:01:00Z",
+    "url_count": 100,
+    "added_count": 2,
+    "removed_count": 1,
+    "updated_count": 3,
+    "error_message": null,
+    "change_count": 1,
+    "changes": [
+      {
+        "id": "uuid",
+        "change_type": "added",
+        "url": "https://example.com/a",
+        "old_lastmod": null,
+        "new_lastmod": "2026-07-15",
+        "created_at": "2026-07-15T00:01:00Z"
+      }
+    ]
+  }
+]
+```
+
+## GET /checks/{check_id}
+
+入参 Path：
+
+```text
+check_id: string
+```
+
+入参 Query：
+
+```text
+change_type: string，可选，added | removed | updated
+```
+
+出参：
+
+```json
+{
+  "id": "uuid",
+  "site_id": "uuid",
+  "status": "completed",
+  "started_at": "2026-07-15T00:00:00Z",
+  "finished_at": "2026-07-15T00:01:00Z",
+  "url_count": 100,
+  "added_count": 2,
+  "removed_count": 1,
+  "updated_count": 3,
+  "error_message": null,
+  "change_count": 1,
+  "changes": [
+    {
+      "id": "uuid",
+      "change_type": "added",
+      "url": "https://example.com/a",
+      "old_lastmod": null,
+      "new_lastmod": "2026-07-15",
+      "created_at": "2026-07-15T00:01:00Z"
+    }
+  ]
+}
+```
+
+## GET /sites/{site_id}/urls
+
+入参 Path：
+
+```text
+site_id: string
+```
+
+入参 Query：
+
+```text
+include_removed: boolean，可选，默认 false
+limit: number，可选，默认 100，范围 1-500
+offset: number，可选，默认 0，最小 0
+```
+
+出参：
+
+```json
+{
+  "items": [
+    {
+      "id": "uuid",
+      "site_id": "uuid",
+      "url_hash": "hash",
+      "url": "https://example.com/a",
+      "lastmod": "2026-07-15",
+      "first_seen_at": "2026-07-15T00:00:00Z",
+      "last_seen_at": "2026-07-15T00:01:00Z",
+      "last_seen_check_id": "uuid",
+      "removed_at": null,
+      "created_at": "2026-07-15T00:00:00Z",
+      "updated_at": "2026-07-15T00:01:00Z"
+    }
+  ],
+  "total": 100,
+  "limit": 100,
+  "offset": 0
+}
+```

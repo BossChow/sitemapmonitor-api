@@ -20,7 +20,7 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     op.create_table(
         "sites",
-        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("id", sa.Uuid(), primary_key=True),
         sa.Column("owner_user_id", sa.String(length=128), nullable=False),
         sa.Column("name", sa.String(length=255), nullable=False),
         sa.Column("root_url", sa.Text(), nullable=False),
@@ -38,14 +38,9 @@ def upgrade() -> None:
 
     op.create_table(
         "sitemap_checks",
-        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("id", sa.Uuid(), primary_key=True),
         sa.Column("owner_user_id", sa.String(length=128), nullable=False),
-        sa.Column(
-            "site_id",
-            sa.Integer(),
-            sa.ForeignKey("sites.id", ondelete="CASCADE"),
-            nullable=False,
-        ),
+        sa.Column("site_id", sa.Uuid(), nullable=False),
         sa.Column("status", sa.String(length=32), nullable=False),
         sa.Column("started_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("finished_at", sa.DateTime(timezone=True), nullable=True),
@@ -64,24 +59,14 @@ def upgrade() -> None:
 
     op.create_table(
         "sitemap_urls",
-        sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column(
-            "site_id",
-            sa.Integer(),
-            sa.ForeignKey("sites.id", ondelete="CASCADE"),
-            nullable=False,
-        ),
+        sa.Column("id", sa.Uuid(), primary_key=True),
+        sa.Column("site_id", sa.Uuid(), nullable=False),
         sa.Column("url_hash", sa.String(length=64), nullable=False),
         sa.Column("url", sa.Text(), nullable=False),
         sa.Column("lastmod", sa.String(length=64), nullable=True),
         sa.Column("first_seen_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("last_seen_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column(
-            "last_seen_check_id",
-            sa.Integer(),
-            sa.ForeignKey("sitemap_checks.id"),
-            nullable=True,
-        ),
+        sa.Column("last_seen_check_id", sa.Uuid(), nullable=True),
         sa.Column("removed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
@@ -91,26 +76,11 @@ def upgrade() -> None:
 
     op.create_table(
         "sitemap_url_changes",
-        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("id", sa.Uuid(), primary_key=True),
         sa.Column("owner_user_id", sa.String(length=128), nullable=False),
-        sa.Column(
-            "site_id",
-            sa.Integer(),
-            sa.ForeignKey("sites.id", ondelete="CASCADE"),
-            nullable=False,
-        ),
-        sa.Column(
-            "check_id",
-            sa.Integer(),
-            sa.ForeignKey("sitemap_checks.id", ondelete="CASCADE"),
-            nullable=False,
-        ),
-        sa.Column(
-            "url_id",
-            sa.Integer(),
-            sa.ForeignKey("sitemap_urls.id", ondelete="SET NULL"),
-            nullable=True,
-        ),
+        sa.Column("site_id", sa.Uuid(), nullable=False),
+        sa.Column("check_id", sa.Uuid(), nullable=False),
+        sa.Column("url_id", sa.Uuid(), nullable=True),
         sa.Column("change_type", sa.String(length=32), nullable=False),
         sa.Column("url", sa.Text(), nullable=False),
         sa.Column("old_lastmod", sa.String(length=64), nullable=True),

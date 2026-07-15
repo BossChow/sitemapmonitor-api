@@ -5,6 +5,7 @@ import httpx
 from lxml import etree
 
 from app.core.config import settings
+from app.services.http_client import create_sitemap_http_client
 from app.services.url_utils import normalize_url
 
 
@@ -20,11 +21,7 @@ class SitemapFetchError(Exception):
 
 class SitemapParser:
     def __init__(self, client: httpx.Client | None = None) -> None:
-        self.client = client or httpx.Client(
-            timeout=settings.sitemap_fetch_timeout_seconds,
-            follow_redirects=True,
-            headers={"User-Agent": "SitemapMonitor/0.1"},
-        )
+        self.client = client or create_sitemap_http_client()
 
     def collect(self, sitemap_url: str) -> list[SitemapEntry]:
         entries: list[SitemapEntry] = []

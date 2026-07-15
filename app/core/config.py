@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     sitemap_fetch_timeout_seconds: float = 30.0
     max_sitemap_depth: int = 5
     max_sitemap_files: int = 200
+    site_check_lock_timeout_seconds: int = 7200
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
@@ -20,4 +21,3 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
-

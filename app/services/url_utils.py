@@ -19,3 +19,9 @@ def normalize_url(url: str) -> str:
 def hash_url(url: str) -> str:
     return sha256(url.encode("utf-8")).hexdigest()
 
+
+def derive_site_name(root_url: str) -> str:
+    hostname = urlsplit(root_url).hostname or ""
+    hostname = hostname.removeprefix("www.")
+    label = hostname.split(".", maxsplit=1)[0]
+    return label[:1].upper() + label[1:]
