@@ -6,6 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/sitemap_monitor"
     redis_url: str = "redis://localhost:6379/0"
+    celery_queue_name: str = "sitemap_monitor"
     scheduler_batch_size: int = 100
     sitemap_fetch_timeout_seconds: float = 30.0
     max_sitemap_depth: int = 5

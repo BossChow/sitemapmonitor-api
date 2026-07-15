@@ -8,7 +8,7 @@ case "$service_type" in
     exec uvicorn app.main:app --host "${HOST:-0.0.0.0}" --port "${PORT:-8000}"
     ;;
   worker)
-    exec celery -A app.tasks.celery_app worker --loglevel="${LOG_LEVEL:-info}"
+    exec celery -A app.tasks.celery_app worker --loglevel="${LOG_LEVEL:-info}" --queues="${CELERY_QUEUE_NAME:-sitemap_monitor}" --hostname="sitemap-monitor-worker@%h"
     ;;
   beat)
     exec celery -A app.tasks.celery_app beat --loglevel="${LOG_LEVEL:-info}"

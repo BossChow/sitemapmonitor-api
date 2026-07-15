@@ -36,6 +36,7 @@ docker network create infra
 ```bash
 DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/sitemap_monitor
 REDIS_URL=redis://localhost:6379/0
+CELERY_QUEUE_NAME=sitemap_monitor
 ```
 
 ## Shared PostgreSQL setup

@@ -12,7 +12,7 @@ case "$command" in
     uv run uvicorn app.main:app --reload --host "${HOST:-127.0.0.1}" --port "${PORT:-8000}"
     ;;
   worker)
-    uv run celery -A app.tasks.celery_app worker --loglevel="${LOG_LEVEL:-info}"
+    uv run celery -A app.tasks.celery_app worker --loglevel="${LOG_LEVEL:-info}" --queues="${CELERY_QUEUE_NAME:-sitemap_monitor}" --hostname="sitemap-monitor-worker@%h"
     ;;
   beat)
     uv run celery -A app.tasks.celery_app beat --loglevel="${LOG_LEVEL:-info}"
@@ -35,4 +35,3 @@ case "$command" in
     exit 1
     ;;
 esac
-
