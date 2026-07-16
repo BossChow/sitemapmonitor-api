@@ -116,6 +116,38 @@ def test_build_site_baseline_creates_urls_without_check_or_changes(
     assert count_rows(db, SitemapUrlChange) == 0
 
 
+def test_build_site_baseline_preserves_url_text_and_parses_lastmod(
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    site = create_site(db)
+    reset_site_baseline(db, site)
+
+    class FakeParser:
+        def collect(self, sitemap_url: str) -> list[SitemapEntry]:
+            return [
+                SitemapEntry(
+                    url="HTTPS://Example.COM/a?b=2&a=1#section",
+                    lastmod="2026-07-13T08:30:00+08:00",
+                ),
+                SitemapEntry(
+                    url="https://example.com/a?a=1&b=2",
+                    lastmod="2026-07-14T08:30:00+08:00",
+                ),
+            ]
+
+    monkeypatch.setattr("app.services.sitemap_checker.SitemapParser", FakeParser)
+
+    result = build_site_baseline(db, site.id)
+    url = db.scalar(select(SitemapUrl))
+
+    assert result.url_count == 1
+    assert url is not None
+    assert url.url == "HTTPS://Example.COM/a?b=2&a=1#section"
+    assert url.lastmod == "2026-07-13T08:30:00+08:00"
+    assert url.lastmod_at == datetime(2026, 7, 13, 0, 30)
+
+
 def test_build_site_baseline_discovers_sitemap_when_not_provided(
     db: Session,
     monkeypatch: pytest.MonkeyPatch,

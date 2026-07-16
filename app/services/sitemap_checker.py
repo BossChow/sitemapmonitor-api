@@ -13,7 +13,7 @@ from app.models.sitemap_url_change import ChangeType, SitemapUrlChange
 from app.services.frequency import calculate_next_check_at
 from app.services.sitemap_discovery import SitemapDiscovery
 from app.services.sitemap_parser import SitemapEntry, SitemapParser
-from app.services.url_utils import hash_url
+from app.services.url_utils import hash_url, parse_sitemap_lastmod
 
 URL_LOOKUP_BATCH_SIZE = 1000
 
@@ -146,12 +146,14 @@ def build_site_baseline(db: Session, site_id: UUID) -> BaselineResult:
         unique_entries = collect_unique_entries(entries)
 
         for url_hash, entry in unique_entries.items():
+            lastmod_at = parse_sitemap_lastmod(entry.lastmod)
             db.add(
                 SitemapUrl(
                     site_id=site.id,
                     url_hash=url_hash,
                     url=entry.url,
                     lastmod=entry.lastmod,
+                    lastmod_at=lastmod_at,
                     first_seen_at=now,
                     last_seen_at=now,
                     last_seen_check_id=None,
@@ -250,6 +252,7 @@ def run_sitemap_check(db: Session, site_id: UUID) -> CheckResult:
 
         for url_hash, entry in unique_entries.items():
             existing = existing_urls.get(url_hash)
+            lastmod_at = parse_sitemap_lastmod(entry.lastmod)
 
             if existing is None:
                 url_row = SitemapUrl(
@@ -257,6 +260,7 @@ def run_sitemap_check(db: Session, site_id: UUID) -> CheckResult:
                     url_hash=url_hash,
                     url=entry.url,
                     lastmod=entry.lastmod,
+                    lastmod_at=lastmod_at,
                     first_seen_at=now,
                     last_seen_at=now,
                     last_seen_check_id=check.id,
@@ -321,6 +325,7 @@ def run_sitemap_check(db: Session, site_id: UUID) -> CheckResult:
                 updated_count += 1
 
             existing.lastmod = entry.lastmod
+            existing.lastmod_at = lastmod_at
 
         db.flush()
         removed_urls = db.scalars(

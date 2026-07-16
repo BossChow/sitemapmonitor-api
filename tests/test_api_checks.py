@@ -388,7 +388,8 @@ def test_list_site_urls_returns_total_for_filtered_result(
                 site_id=site.id,
                 url_hash="hash-a",
                 url="https://example.com/a",
-                lastmod=None,
+                lastmod="2026-07-14",
+                lastmod_at=now - timedelta(days=1),
                 first_seen_at=now,
                 last_seen_at=now,
                 removed_at=None,
@@ -397,7 +398,8 @@ def test_list_site_urls_returns_total_for_filtered_result(
                 site_id=site.id,
                 url_hash="hash-b",
                 url="https://example.com/b",
-                lastmod=None,
+                lastmod="2026-07-15",
+                lastmod_at=now,
                 first_seen_at=now,
                 last_seen_at=now - timedelta(minutes=1),
                 removed_at=None,
@@ -407,6 +409,7 @@ def test_list_site_urls_returns_total_for_filtered_result(
                 url_hash="hash-c",
                 url="https://example.com/c",
                 lastmod=None,
+                lastmod_at=None,
                 first_seen_at=now,
                 last_seen_at=now - timedelta(minutes=2),
                 removed_at=now,
@@ -435,3 +438,164 @@ def test_list_site_urls_returns_total_for_filtered_result(
 
     assert include_removed_response.status_code == 200
     assert include_removed_response.json()["total"] == 3
+
+
+def test_list_site_urls_supports_recently_added_and_lastmod_filters(
+    client: TestClient,
+    db: Session,
+) -> None:
+    now = datetime.now(UTC)
+    site = Site(
+        owner_user_id="test-user",
+        name="Example",
+        root_url="https://example.com",
+        sitemap_url="https://example.com/sitemap.xml",
+        status=SiteStatus.active.value,
+        check_frequency=CheckFrequency.daily.value,
+        baseline_completed_at=now,
+    )
+    db.add(site)
+    db.flush()
+    db.add_all(
+        [
+            SitemapUrl(
+                site_id=site.id,
+                url_hash="hash-old",
+                url="https://example.com/old",
+                lastmod="2026-07-10",
+                lastmod_at=now - timedelta(days=5),
+                first_seen_at=now - timedelta(days=5),
+                last_seen_at=now,
+                removed_at=None,
+            ),
+            SitemapUrl(
+                site_id=site.id,
+                url_hash="hash-new",
+                url="https://example.com/new",
+                lastmod="2026-07-15",
+                lastmod_at=now - timedelta(days=1),
+                first_seen_at=now - timedelta(hours=1),
+                last_seen_at=now - timedelta(minutes=1),
+                removed_at=None,
+            ),
+        ]
+    )
+    db.commit()
+
+    response = client.get(
+        f"/sites/{site.id}/urls",
+        params={"first_seen_from": (now - timedelta(days=1)).isoformat()},
+        headers={"X-Owner-User-Id": "test-user"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert payload["items"][0]["url"] == "https://example.com/new"
+    assert payload["items"][0]["lastmod_at"] is not None
+
+    lastmod_response = client.get(
+        f"/sites/{site.id}/urls",
+        params={
+            "sort_by": "lastmod_at",
+            "lastmod_from": (now - timedelta(days=2)).isoformat(),
+        },
+        headers={"X-Owner-User-Id": "test-user"},
+    )
+
+    assert lastmod_response.status_code == 200
+    assert lastmod_response.json()["total"] == 1
+    assert lastmod_response.json()["items"][0]["url"] == "https://example.com/new"
+
+
+def test_get_site_url_insights_returns_active_url_statistics(
+    client: TestClient,
+    db: Session,
+) -> None:
+    now = datetime.now(UTC)
+    site = Site(
+        owner_user_id="test-user",
+        name="Example",
+        root_url="https://example.com",
+        sitemap_url="https://example.com/sitemap.xml",
+        status=SiteStatus.active.value,
+        check_frequency=CheckFrequency.daily.value,
+        baseline_completed_at=now,
+    )
+    db.add(site)
+    db.flush()
+    db.add_all(
+        [
+            SitemapUrl(
+                site_id=site.id,
+                url_hash="hash-blog-a",
+                url="https://example.com/blog/a",
+                lastmod="recent",
+                lastmod_at=now - timedelta(hours=12),
+                first_seen_at=now,
+                last_seen_at=now,
+                removed_at=None,
+            ),
+            SitemapUrl(
+                site_id=site.id,
+                url_hash="hash-blog-python",
+                url="https://example.com/blog/tutorials/python",
+                lastmod="week",
+                lastmod_at=now - timedelta(days=5),
+                first_seen_at=now,
+                last_seen_at=now,
+                removed_at=None,
+            ),
+            SitemapUrl(
+                site_id=site.id,
+                url_hash="hash-docs",
+                url="https://example.com/docs",
+                lastmod=None,
+                lastmod_at=None,
+                first_seen_at=now,
+                last_seen_at=now,
+                removed_at=None,
+            ),
+            SitemapUrl(
+                site_id=site.id,
+                url_hash="hash-removed",
+                url="https://example.com/removed",
+                lastmod="removed",
+                lastmod_at=now,
+                first_seen_at=now,
+                last_seen_at=now,
+                removed_at=now,
+            ),
+        ]
+    )
+    db.commit()
+
+    response = client.get(
+        f"/sites/{site.id}/url-insights",
+        headers={"X-Owner-User-Id": "test-user"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["overview"] == {
+        "total_urls": 3,
+        "with_lastmod": 2,
+        "without_lastmod": 1,
+    }
+    assert payload["updates"] == {
+        "modified_last_24h": 1,
+        "modified_last_7d": 2,
+        "modified_last_30d": 2,
+    }
+    assert payload["structure"]["path"] == "/"
+    assert payload["structure"]["url_count"] == 3
+    assert [child["path"] for child in payload["structure"]["children"]] == [
+        "/blog",
+        "/docs",
+    ]
+    blog = payload["structure"]["children"][0]
+    assert blog["url_count"] == 2
+    assert [child["path"] for child in blog["children"]] == [
+        "/blog/a",
+        "/blog/tutorials",
+    ]

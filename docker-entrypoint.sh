@@ -14,7 +14,7 @@ case "$service_type" in
     exec celery -A app.tasks.celery_app beat --loglevel="${LOG_LEVEL:-info}"
     ;;
   migrate)
-    exec alembic upgrade head
+    exec python -m alembic upgrade head
     ;;
   *)
     echo "Unknown SERVICE_TYPE: $service_type"

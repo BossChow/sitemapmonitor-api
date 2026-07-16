@@ -5,7 +5,14 @@ from sqlalchemy import engine_from_config, pool
 from alembic import context
 from app.core.config import settings
 from app.db.base import Base
-from app.models import site, sitemap_check, sitemap_url, sitemap_url_change  # noqa: F401
+from app.models import (  # noqa: F401
+    account,
+    site,
+    sitemap_check,
+    sitemap_url,
+    sitemap_url_change,
+    user,
+)
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)
@@ -46,4 +53,3 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
-

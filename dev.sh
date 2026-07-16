@@ -18,7 +18,7 @@ case "$command" in
     uv run celery -A app.tasks.celery_app beat --loglevel="${LOG_LEVEL:-info}"
     ;;
   migrate)
-    uv run alembic upgrade head
+    uv run python -m alembic upgrade head
     ;;
   check)
     uv run python scripts/check_runtime.py

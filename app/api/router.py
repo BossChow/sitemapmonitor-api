@@ -1,5 +1,6 @@
-from datetime import UTC, datetime
-from typing import Annotated
+from datetime import UTC, datetime, timedelta
+from typing import Annotated, Literal
+from urllib.parse import urlsplit
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -15,7 +16,13 @@ from app.models.sitemap_url_change import ChangeType, SitemapUrlChange
 from app.schemas.common import MessageResponse, TaskResponse
 from app.schemas.site import SiteCreate, SiteRead, SiteUpdate
 from app.schemas.sitemap_check import SitemapCheckWithChangesRead
-from app.schemas.sitemap_url import SitemapUrlListRead
+from app.schemas.sitemap_url import (
+    SitemapUrlListRead,
+    UrlInsightsOverviewRead,
+    UrlInsightsRead,
+    UrlInsightsStructureNodeRead,
+    UrlInsightsUpdatesRead,
+)
 from app.services.frequency import calculate_next_check_at
 from app.services.url_utils import derive_site_name
 from app.tasks.sitemap_tasks import build_site_baseline_task, check_sitemap_task
@@ -24,6 +31,57 @@ router = APIRouter()
 
 DbSession = Annotated[Session, Depends(get_db)]
 OwnerUserId = Annotated[str, Depends(get_owner_user_id)]
+URL_INSIGHTS_MAX_DEPTH = 5
+URL_INSIGHTS_MAX_CHILDREN = 20
+
+
+class UrlTreeNode:
+    def __init__(self, path: str) -> None:
+        self.path = path
+        self.url_count = 0
+        self.children: dict[str, UrlTreeNode] = {}
+
+
+def url_path_segments(url: str) -> list[str]:
+    path = urlsplit(url.strip()).path or "/"
+    return [segment for segment in path.strip("/").split("/") if segment]
+
+
+def child_path(parent_path: str, segment: str) -> str:
+    if parent_path == "/":
+        return f"/{segment}"
+    return f"{parent_path}/{segment}"
+
+
+def as_utc(datetime_value: datetime) -> datetime:
+    if datetime_value.tzinfo is None:
+        return datetime_value.replace(tzinfo=UTC)
+    return datetime_value.astimezone(UTC)
+
+
+def build_url_structure(urls: list[str]) -> UrlInsightsStructureNodeRead:
+    root = UrlTreeNode("/")
+    for url in urls:
+        root.url_count += 1
+        node = root
+        for segment in url_path_segments(url)[:URL_INSIGHTS_MAX_DEPTH]:
+            if segment not in node.children:
+                node.children[segment] = UrlTreeNode(child_path(node.path, segment))
+            node = node.children[segment]
+            node.url_count += 1
+
+    def serialize(node: UrlTreeNode) -> UrlInsightsStructureNodeRead:
+        children = sorted(
+            node.children.values(),
+            key=lambda child: (-child.url_count, child.path),
+        )[:URL_INSIGHTS_MAX_CHILDREN]
+        return UrlInsightsStructureNodeRead(
+            path=node.path,
+            url_count=node.url_count,
+            children=[serialize(child) for child in children],
+        )
+
+    return serialize(root)
 
 
 def get_owned_site(db: Session, owner_user_id: str, site_id: UUID) -> Site:
@@ -266,12 +324,56 @@ def get_check(
     return build_check_response(check, changes)
 
 
+@router.get("/sites/{site_id}/url-insights", response_model=UrlInsightsRead)
+def get_site_url_insights(
+    site_id: UUID,
+    db: DbSession,
+    owner_user_id: OwnerUserId,
+) -> UrlInsightsRead:
+    get_owned_site(db, owner_user_id, site_id)
+    query = select(SitemapUrl).where(
+        SitemapUrl.site_id == site_id,
+        SitemapUrl.removed_at.is_(None),
+    )
+    urls = list(db.scalars(query))
+    total_urls = len(urls)
+    with_lastmod = sum(1 for url in urls if url.lastmod_at is not None)
+    now = datetime.now(UTC)
+    lastmod_values = [as_utc(url.lastmod_at) for url in urls if url.lastmod_at is not None]
+
+    return UrlInsightsRead(
+        overview=UrlInsightsOverviewRead(
+            total_urls=total_urls,
+            with_lastmod=with_lastmod,
+            without_lastmod=total_urls - with_lastmod,
+        ),
+        structure=build_url_structure([url.url for url in urls]),
+        updates=UrlInsightsUpdatesRead(
+            modified_last_24h=sum(
+                1 for lastmod_at in lastmod_values if lastmod_at >= now - timedelta(days=1)
+            ),
+            modified_last_7d=sum(
+                1 for lastmod_at in lastmod_values if lastmod_at >= now - timedelta(days=7)
+            ),
+            modified_last_30d=sum(
+                1 for lastmod_at in lastmod_values if lastmod_at >= now - timedelta(days=30)
+            ),
+        ),
+    )
+
+
 @router.get("/sites/{site_id}/urls", response_model=SitemapUrlListRead)
 def list_site_urls(
     site_id: UUID,
     db: DbSession,
     owner_user_id: OwnerUserId,
     include_removed: bool = False,
+    sort_by: Literal["last_seen_at", "first_seen_at", "lastmod_at"] = "last_seen_at",
+    sort_order: Literal["asc", "desc"] = "desc",
+    lastmod_from: datetime | None = None,
+    lastmod_to: datetime | None = None,
+    first_seen_from: datetime | None = None,
+    first_seen_to: datetime | None = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> SitemapUrlListRead:
@@ -279,9 +381,29 @@ def list_site_urls(
     query = select(SitemapUrl).where(SitemapUrl.site_id == site_id)
     if not include_removed:
         query = query.where(SitemapUrl.removed_at.is_(None))
+    if lastmod_from is not None:
+        query = query.where(SitemapUrl.lastmod_at >= lastmod_from)
+    if lastmod_to is not None:
+        query = query.where(SitemapUrl.lastmod_at <= lastmod_to)
+    if first_seen_from is not None:
+        query = query.where(SitemapUrl.first_seen_at >= first_seen_from)
+    if first_seen_to is not None:
+        query = query.where(SitemapUrl.first_seen_at <= first_seen_to)
+
+    sort_column = {
+        "last_seen_at": SitemapUrl.last_seen_at,
+        "first_seen_at": SitemapUrl.first_seen_at,
+        "lastmod_at": SitemapUrl.lastmod_at,
+    }[sort_by]
+    ordered_column = sort_column.asc() if sort_order == "asc" else sort_column.desc()
+
     total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
     items = list(
-        db.scalars(query.order_by(SitemapUrl.last_seen_at.desc()).limit(limit).offset(offset))
+        db.scalars(
+            query.order_by(sort_column.is_(None), ordered_column)
+            .limit(limit)
+            .offset(offset)
+        )
     )
     return SitemapUrlListRead(
         items=items,

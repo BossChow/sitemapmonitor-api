@@ -66,7 +66,7 @@ class SitemapParser:
             lastmod_values = url_node.xpath("./*[local-name()='lastmod']/text()")
             entries.append(
                 SitemapEntry(
-                    url=normalize_url(str(loc_values[0])),
+                    url=str(loc_values[0]),
                     lastmod=str(lastmod_values[0]).strip() if lastmod_values else None,
                 )
             )

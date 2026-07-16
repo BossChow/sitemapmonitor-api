@@ -304,6 +304,12 @@ site_id: string
 
 ```text
 include_removed: boolean，可选，默认 false
+sort_by: string，可选，默认 last_seen_at，可选值 last_seen_at / first_seen_at / lastmod_at
+sort_order: string，可选，默认 desc，可选值 asc / desc
+lastmod_from: datetime，可选，筛选 sitemap lastmod 解析时间 >= 该值的 URL
+lastmod_to: datetime，可选，筛选 sitemap lastmod 解析时间 <= 该值的 URL
+first_seen_from: datetime，可选，筛选系统首次发现时间 >= 该值的 URL
+first_seen_to: datetime，可选，筛选系统首次发现时间 <= 该值的 URL
 limit: number，可选，默认 100，范围 1-500
 offset: number，可选，默认 0，最小 0
 ```
@@ -319,6 +325,7 @@ offset: number，可选，默认 0，最小 0
       "url_hash": "hash",
       "url": "https://example.com/a",
       "lastmod": "2026-07-15",
+      "lastmod_at": "2026-07-15T00:00:00Z",
       "first_seen_at": "2026-07-15T00:00:00Z",
       "last_seen_at": "2026-07-15T00:01:00Z",
       "last_seen_check_id": "uuid",
@@ -331,4 +338,56 @@ offset: number，可选，默认 0，最小 0
   "limit": 100,
   "offset": 0
 }
+```
+
+## GET /sites/{site_id}/url-insights
+
+基于当前 active sitemap URL 生成统计信息；不包含 `removed_at IS NOT NULL` 的 URL。
+
+入参 Path：
+
+```text
+site_id: string
+```
+
+出参：
+
+```json
+{
+  "overview": {
+    "total_urls": 1180,
+    "with_lastmod": 950,
+    "without_lastmod": 230
+  },
+  "structure": {
+    "path": "/",
+    "url_count": 1180,
+    "children": [
+      {
+        "path": "/blog",
+        "url_count": 420,
+        "children": [
+          {
+            "path": "/blog/tutorials",
+            "url_count": 180,
+            "children": []
+          }
+        ]
+      }
+    ]
+  },
+  "updates": {
+    "modified_last_24h": 8,
+    "modified_last_7d": 140,
+    "modified_last_30d": 360
+  }
+}
+```
+
+说明：
+
+```text
+structure 最多展开 5 层，每个节点最多返回 20 个子节点。
+updates 只基于 sitemap lastmod 解析后的 lastmod_at 统计。
+没有 lastmod 或 lastmod 无法解析的 URL 不参与 updates，只计入 overview.without_lastmod。
 ```

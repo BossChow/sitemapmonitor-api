@@ -1,3 +1,4 @@
+from datetime import UTC, date, datetime
 from hashlib import sha256
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -17,7 +18,27 @@ def normalize_url(url: str) -> str:
 
 
 def hash_url(url: str) -> str:
-    return sha256(url.encode("utf-8")).hexdigest()
+    return sha256(normalize_url(url).encode("utf-8")).hexdigest()
+
+
+def parse_sitemap_lastmod(lastmod: str | None) -> datetime | None:
+    if lastmod is None:
+        return None
+
+    value = lastmod.strip()
+    if not value:
+        return None
+
+    try:
+        if "T" not in value and " " not in value:
+            return datetime.combine(date.fromisoformat(value), datetime.min.time(), tzinfo=UTC)
+
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)
+    except ValueError:
+        return None
 
 
 def derive_site_name(root_url: str) -> str:

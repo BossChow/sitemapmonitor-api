@@ -7,7 +7,7 @@ def test_parser_collects_urlset_entries() -> None:
     xml = b"""
     <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
       <url>
-        <loc>https://example.com/b</loc>
+        <loc>HTTPS://Example.COM/b?z=1&amp;a=2#section</loc>
         <lastmod>2026-07-12</lastmod>
       </url>
     </urlset>
@@ -20,7 +20,7 @@ def test_parser_collects_urlset_entries() -> None:
     entries = parser.collect("https://example.com/sitemap.xml")
 
     assert len(entries) == 1
-    assert entries[0].url == "https://example.com/b"
+    assert entries[0].url == "HTTPS://Example.COM/b?z=1&a=2#section"
     assert entries[0].lastmod == "2026-07-12"
 
 
@@ -44,4 +44,3 @@ def test_parser_follows_sitemap_index() -> None:
     entries = parser.collect("https://example.com/sitemap.xml")
 
     assert [entry.url for entry in entries] == ["https://example.com/a"]
-
